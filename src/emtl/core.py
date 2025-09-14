@@ -63,7 +63,7 @@ def _check_captcha_resp(resp: Response):
 
 
 def _check_resp(resp: Response):
-    logger.info(f"response={resp.text}")
+    # logger.info(f"response={resp.text}")
     if resp.status_code != 200:
         logger.error(f"request {resp.url} fail, code={resp.status_code}, response={resp.text}")
         raise RuntimeError(f"HTTP request failed with status {resp.status_code}")
