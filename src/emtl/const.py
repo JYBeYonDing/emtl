@@ -2,6 +2,7 @@ _urls: dict = {
     "yzm": "https://jywg.18.cn/Login/YZM?randNum=",
     "login": "https://jywg.18.cn/Login/Authentication?validatekey=",
     "query_asset_and_pos": "https://jywg.18.cn/Com/queryAssetAndPositionV1?validatekey=",
+    "query_credit_asset_and_pos_v1": "https://jywg.18.cn/MarginSearch/queryCreditNewPosV1?validatekey=",
     "query_orders": "https://jywg.18.cn/Search/GetOrdersData?validatekey=",
     "query_trades": "https://jywg.18.cn/Search/GetDealData?validatekey=",
     "query_his_orders": "https://jywg.18.cn/Search/GetHisOrdersData?validatekey=",

@@ -145,6 +145,12 @@ def query_asset_and_position():
     if resp:
         return resp.json()
 
+def query_credit_asset_and_pos_v1():
+    """Get credit asset and position."""
+    resp = _query_something("query_credit_asset_and_pos_v1")
+    if resp:
+        return resp.json()
+
 
 def query_orders():
     """查询订单."""
