@@ -158,12 +158,12 @@ def _get_em_validate_key():
         return _em_validatekey
 
 
-def login(username: str = "", password: str = "", duration: int = 15) -> Optional[str]:
+def login(username: str = "", password: str = "", duration: int = 180) -> Optional[str]:
     """登录接口.
 
     :param str username: 用户名
     :param str password: 密码(明文)
-    :param duration: 在线时长(分钟), defaults to 30
+    :param duration: 在线时长(分钟), defaults to 180
     :type duration: int, optional
     :return:
     """
