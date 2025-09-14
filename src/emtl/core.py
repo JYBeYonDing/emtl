@@ -13,6 +13,11 @@ from .const import _base_headers
 from .const import _urls
 from .utils import emt_trade_encrypt
 from .utils import get_float
+
+
+class SessionExpiredError(Exception):
+    """会话超时异常"""
+    pass
 from .utils import get_logger
 
 logger = get_logger(__name__)
@@ -37,11 +42,45 @@ def get_last_price(symbol_code: str, market: str) -> float:
 
     return get_float(ret["realtimequote"], "currentPrice")
 
-
-def _check_resp(resp: Response):
+def _check_login_resp(resp: Response):
+    # logger.info(f"response={resp.text}")
     if resp.status_code != 200:
         logger.error(f"request {resp.url} fail, code={resp.status_code}, response={resp.text}")
-        raise
+        raise RuntimeError(f"HTTP request failed with status {resp.status_code}")
+
+
+def _check_captcha_resp(resp: Response):
+    """检查验证码响应，验证码接口返回的是图片数据，不是JSON"""
+    if resp.status_code != 200:
+        logger.error(f"captcha request {resp.url} fail, code={resp.status_code}")
+        raise RuntimeError(f"Captcha request failed with status {resp.status_code}")
+    
+    # 检查Content-Type是否为图片
+    content_type = resp.headers.get('content-type', '').lower()
+    if not any(img_type in content_type for img_type in ['image/', 'jpeg', 'jpg', 'png', 'gif']):
+        logger.error(f"captcha response is not an image, content-type: {content_type}")
+        raise RuntimeError(f"Captcha response is not an image, content-type: {content_type}")
+
+
+def _check_resp(resp: Response):
+    logger.info(f"response={resp.text}")
+    if resp.status_code != 200:
+        logger.error(f"request {resp.url} fail, code={resp.status_code}, response={resp.text}")
+        raise RuntimeError(f"HTTP request failed with status {resp.status_code}")
+    
+    try:
+        resp_json = resp.json()
+        status = resp_json.get("Status")
+        if status is not None and status != 0:
+            logger.error(f"request {resp.url} fail, response status not 0, response={resp.text}")
+            # 如果是会话超时错误，抛出特定的异常以便上层处理
+            if status == -2:
+                raise SessionExpiredError(f"Session expired: {resp_json.get('Message', 'Unknown error')}")
+            else:
+                raise RuntimeError(f"API request failed with status {status}: {resp_json.get('Message', 'Unknown error')}")
+    except ValueError as e:
+        logger.error(f"Failed to parse JSON response: {e}, response={resp.text}")
+        raise RuntimeError(f"Invalid JSON response: {e}")
 
 
 def _query_something(tag: str, req_data: Optional[dict] = None) -> Optional[Response]:
@@ -67,7 +106,25 @@ def _query_something(tag: str, req_data: Optional[dict] = None) -> Optional[Resp
     headers["X-Requested-With"] = "XMLHttpRequest"
     logger.debug(f"(tag={tag}), (data={req_data}), (url={url})")
     resp = session.post(url, headers=headers, data=req_data)
-    _check_resp(resp)
+    try:
+        _check_resp(resp)
+    except SessionExpiredError as e:
+        logger.info(f"Session expired, attempting to re-login: {e}")
+        validate_key = login()
+        url = _urls[tag] + validate_key
+        if req_data is None:
+            req_data = {
+                "qqhs": 100,
+                "dwc": "",
+            }
+        headers = _base_headers.copy()
+        headers["X-Requested-With"] = "XMLHttpRequest"
+        logger.debug(f"(tag={tag}), (data={req_data}), (url={url})")
+        resp = session.post(url, headers=headers, data=req_data)
+        _check_resp(resp)
+    except Exception as e:
+        logger.error(f"request {url} fail, exception: {e}, response={resp.text}")
+        raise
     return resp
 
 
@@ -76,7 +133,7 @@ def _get_captcha_code() -> tuple[float, Any]:
     cryptogen = SystemRandom()
     random_num = cryptogen.random()
     resp = get(f"{_urls['yzm']}{random_num}", headers=_base_headers, timeout=60)
-    _check_resp(resp)
+    _check_login_resp(resp)  # 使用专门的验证码检查函数
     code = ocr.classification(resp.content)
     if code:
         try:
@@ -92,7 +149,7 @@ def _get_em_validate_key():
     """获取 em_validatekey"""
     url = "https://jywg.18.cn/Trade/Buy"
     resp = session.get(url, headers=_base_headers)
-    _check_resp(resp)
+    _check_login_resp(resp)
     match_result = re.findall(r'id="em_validatekey" type="hidden" value="(.*?)"', resp.text)
     if match_result:
         _em_validatekey = match_result[0].strip()
@@ -101,7 +158,7 @@ def _get_em_validate_key():
         return _em_validatekey
 
 
-def login(username: str = "", password: str = "", duration: int = 30) -> Optional[str]:
+def login(username: str = "", password: str = "", duration: int = 15) -> Optional[str]:
     """登录接口.
 
     :param str username: 用户名
@@ -110,10 +167,11 @@ def login(username: str = "", password: str = "", duration: int = 30) -> Optiona
     :type duration: int, optional
     :return:
     """
-    if not username:
+    if not username or username == "":
         username = os.getenv("EM_USERNAME", "")
-    if not password:
+    if not password or password == "":
         password = os.getenv("EM_PASSWORD", "")
+    logger.info(f"login username: {username}")
     random_num, code = _get_captcha_code()
     headers = _base_headers.copy()
     headers["X-Requested-With"] = "XMLHttpRequest"
@@ -131,7 +189,7 @@ def login(username: str = "", password: str = "", duration: int = 30) -> Optiona
         "secInfo": "",
     }
     resp = session.post(url, headers=headers, data=data)
-    _check_resp(resp)
+    _check_login_resp(resp)
     try:
         logger.info(f"login success for {resp.json()}")
         return _get_em_validate_key()
